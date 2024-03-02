@@ -1,0 +1,170 @@
+---
+title: "ALP_technical_exercise"
+author: "Dhruv Nirmal"
+date: "`r Sys.Date()`"
+output:
+  
+  bookdown::pdf_document2: default 
+  bookdown::html_document: default
+  pdf_document: default
+---
+
+```{r setup, include = TRUE, echo = FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  eval = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.width = 5,
+  fig.height = 2,
+  fig.pos = "H"
+)
+```
+
+```{r}
+#loading libraries
+library(tidyverse)
+library(ggplot2)
+library(kableExtra)
+library(bookdown)
+```
+
+
+```{r}
+correspondence <- read_csv('sa1_electorate_correspondence.csv') #loading correspondence data
+census_data <- read_csv('ACT_census_data_by_sa1.csv') #loading census data
+
+data <- census_data %>% #join the datasets to sort statistical areas by their electorate 
+  left_join(correspondence,
+            by = 'sa1_2021') %>%
+  filter(electorate == 'Fenner') #chose fenner as the electorate to perform analysis
+
+```
+
+
+
+```{r}
+create_summary_df <- function(data, col_indices, category_name) {
+  # Extract the relevant columns based on indices
+  relevant_columns <- data[col_indices]
+  
+  # Create the summary data frame
+  summary_df <- data.frame(
+    category = colnames(relevant_columns),
+    population = map(relevant_columns, sum) %>%
+      unlist() %>%
+      unname()
+  ) 
+    
+  
+  # Set the name for the category column
+  names(summary_df)[1] <- category_name
+  
+  return(summary_df)
+}
+
+# creating different demographic characteristics summaries using func
+ancestry <- create_summary_df(data, 2:6, "ancestry")
+religion <- create_summary_df(data, 8:10, "religion")
+mode_of_transport <- create_summary_df(data, 22:27, "mode_of_transport")
+age_group <- create_summary_df(data, 17:20, "age_group")
+property_type <- create_summary_df(data, 13:15, "property_type")
+education <- create_summary_df(data, c(11:12, 7), "education")
+
+
+```
+
+
+
+Fenner, a key electorate in the Australian Capital Territory, demonstrates a vibrant and diverse demographic profile. With a total population of `r format(sum(data$total), scientific = FALSE)`, the electorate showcases a broad array of ancestries, religions, and educational backgrounds, reflecting a rich cultural tapestry. The average population across its statistical areas stands at `r round(mean(data$total))`, indicating a densely populated urban environment.
+
+The housing landscape reveals a total of `r format(sum(data$total_dwellings), scientific = FALSE)` dwellings, with an average of `r round(mean(data$total_dwellings))` dwellings per statistical area, pointing towards a well-developed residential sector, with almost 3 people living in a house. Ancestry within Fenner is predominantly **Australian** (`r format(ancestry$population[1], scientific = FALSE)`), supplemented by significant Chinese (4,476), and Indian (4,444) communities, highlighting its multicultural character. There are almost 3000 people from filipino and vietnamese ancestory.
+
+Religious affiliations are varied, with Christianity being the major religion (41,871), followed by a substantial number of residents identifying with no religion `r format(religion$population[3], scientific = FALSE)`, and a smaller Muslim population. This diversity in belief systems underpins the electorate's inclusive nature.
+
+Transportation preferences among Fenner's residents underscore a reliance on cars, with a significant number choosing driving as their primary mode of transport to work  (**See Figure \@ref(fig:transport)**). This is complemented by other modes such as public transport and cycling, reflecting a range of commuting preferences. In almost half of the the statistical areas (`r nrow(data %>% filter(tram_light_rail == 0))`), no one chooses **light train/tram** as their mode of transport to go to work, which suggests these areas are underdeveloped or don't have enough residents to make such a big investment. 
+
+```{r transport, fig.cap='Mode of transport chosen'}
+ggplot(data = mode_of_transport, aes(x = reorder(mode_of_transport, population), #reorder x-axis
+                                     y = population)) + #use ggplot to display different modes of transportation
+        geom_bar(stat = "identity") +
+        coord_flip( ) + #flip co-ordinates
+  labs(y = "mode of transport", 
+       x = "population") +
+  ggtitle("Mode of transport taken to work")
+```
+
+
+Age distribution indicates a balanced demographic, with a significant proportion of the population in their prime working ages (18 to 49 years: 62,381). This suggests a dynamic workforce contributing to the electorate's economic vitality. The distribution of proportion of people in their prime to people people who are still young or old to work seems [normal](https://www.techtarget.com/whatis/definition/normal-distribution). **(See Table \@ref(tab:histo)**)
+
+```{r histo, fig.cap='Distribution of proportion of working people to non-working'}
+data <- data %>% 
+  mutate(progressive = (data$age_18_29 + data$age_30_49)/(data$age_18_29 + data$age_30_49 + data$under_18 + data$age_over50)) #muatet new column to find proprtion 
+t(quantile(data$progressive, na.rm = T)) %>% kable(caption='Distribution')
+```
+
+
+
+Property ownership patterns reveal a mix of outright ownership (`r format(property_type$population[1], scientific = FALSE)`), mortgages (`r format(property_type$population[2], scientific = FALSE)`), and rentals (`r format(property_type$population[3], scientific = FALSE)`), showcasing diverse housing tenures. Education levels are high, with a considerable number of residents holding bachelor (11,988) and postgraduate degrees (25,446), alongside those in tertiary education (17,610). Statistical areas with more people still in process of attaining their tertiary education have more rented dwellings as there is a [positive correlation](https://www.investopedia.com/terms/p/positive-correlation.asp) (**See Figure \@ref(fig:correlation-plot)**).
+
+```{r correlation-plot, fig.cap='Correlation plot'}
+ggplot(data,   #correlation plot 
+       aes(x = data$in_tertiary_education,
+           y = data$rented)) +
+  geom_point() + #point
+  labs(x = 'Number of dwellings rented' , y = 'People attaining tertiary edu') +
+  ggtitle('Rented properties vs number of students')  +
+  geom_smooth()
+  
+```
+
+
+```{r, echo = FALSE, eval = F, message = FALSE, warning = FALSE }
+sessioninfo::session_info() %>%
+  details::details(
+    summary = 'Current session info',
+    open    = FALSE
+  )
+```
+
+
+If assumed, that total population taking transportation to work is employed, the correlation between unemployed population and population with bachelor's or higher shows positive relationship which is a matter of grave concern as it depicts academic unemployement. (**Figure \@ref(fig:edu-vs-unemp)**)
+
+```{r edu-vs-unemp, fig.cap='Academic unemployement rate '}
+data <- data %>% #calculating unemployed people and comparing them to level of education attained in a SA
+  mutate(employed = total - (data$bus + 
+                               data$walk + 
+                               data$bike + 
+                               data$tram_light_rail + 
+                               data$car_passenger + 
+                               data$car_driver)) %>%
+  mutate(total_educated = data$bachelor_degree + 
+           data$postgrad_degree )
+
+ggplot(data,   #correlation plot 
+       aes(x = data$employed,
+           y = data$total_educated)) +
+  geom_point() + #point
+  labs(x = 'Unemployed people' , y = 'Bachelors or higher') +
+  ggtitle('Educated population vs unemployed population')  +
+  geom_smooth()
+  
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
